@@ -22,15 +22,36 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
+	"github.com/cloudflare/cloudflared/logger"
+	"github.com/cloudflare/cloudflared/token"
 ) // Client is our prometheus v1 API interface
 type Client interface {
 	v1.API
+}
+
+type cfAccessRoundTripper struct {
+	token string
+	rt    http.RoundTripper
+}
+
+func NewCFAccessRoundTripper(tok string, rt http.RoundTripper) *cfAccessRoundTripper {
+	return &cfAccessRoundTripper{tok, rt}
+}
+
+func (rt *cfAccessRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if len(req.Header.Get("Cf-Access-Token")) == 0 {
+		//req = cloneRequest(req)
+		req.Header.Set("Cf-Access-Token", rt.token)
+	}
+	return rt.rt.RoundTrip(req)
 }
 
 // CreateClient creates a Client interface for the provided hostname
@@ -45,7 +66,7 @@ func CreateClient(host string) (v1.API, error) {
 }
 
 // CreateClientWithAuth creates a Client interface witht the provided hostname and auth config
-func CreateClientWithAuth(host string, authCfg config.Authorization, tlsCfg config.TLSConfig) (v1.API, error) {
+func CreateClientWithAuth(host string, authCfg config.Authorization, tlsCfg config.TLSConfig, useAccess bool) (v1.API, error) {
 	cfg := api.Config{
 		Address: host,
 	}
@@ -75,6 +96,19 @@ func CreateClientWithAuth(host string, authCfg config.Authorization, tlsCfg conf
 			rt = config.NewAuthorizationCredentialsFileRoundTripper(authCfg.Type, authCfg.CredentialsFile, rt)
 		}
 	}
+	if useAccess {
+		tempAccessURL, _ := url.Parse(host)
+		cloudflaredLogger := logger.Create(nil)
+		appInfo, err := token.GetAppInfo(tempAccessURL)
+		if err != nil {
+			cloudflaredLogger.Fatal().Err(err).Msg("failed to fetch access token")
+		}
+		tok, err := token.FetchToken(tempAccessURL, appInfo, cloudflaredLogger)
+		if err != nil {
+			cloudflaredLogger.Fatal().Err(err).Msg("failed to fetch access token")
+		}
+		rt = NewCFAccessRoundTripper(tok, rt)
+	}
 	cfg.RoundTripper = rt
 	a, err := api.NewClient(cfg)
 	if err != nil {
@@ -97,6 +131,7 @@ type PromQL struct {
 	Auth            config.Authorization
 	Client          v1.API
 	TLSConfig       config.TLSConfig
+	CFAccess        bool
 }
 
 // InstantQuery performs an instant query and returns the result

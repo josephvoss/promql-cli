@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -62,6 +62,7 @@ var rootCmd = &cobra.Command{
 			ServerName:         viper.GetString("tls_config.servername"),
 			InsecureSkipVerify: viper.GetBool("tls_config.insecure_skip_verify"),
 		}
+		pql.CFAccess = viper.GetBool("use_access")
 
 		pql.Host = viper.GetString("host")
 		pql.Step = viper.GetString("step")
@@ -79,7 +80,7 @@ var rootCmd = &cobra.Command{
 			pql.Time = t
 		}
 		// Create and set client interface
-		cl, err := promql.CreateClientWithAuth(pql.Host, pql.Auth, pql.TLSConfig)
+		cl, err := promql.CreateClientWithAuth(pql.Host, pql.Auth, pql.TLSConfig, pql.CFAccess)
 		if err != nil {
 			errlog.Fatalln(err)
 		}
@@ -185,6 +186,10 @@ func init() {
 	}
 	rootCmd.PersistentFlags().Bool("tls_config.insecure_skip_verify", false, "disable the TLS verification of server certificates.")
 	if err := viper.BindPFlag("tls_config.insecure_skip_verify", rootCmd.PersistentFlags().Lookup("tls_config.insecure_skip_verify")); err != nil {
+		errlog.Fatalln(err)
+	}
+	rootCmd.PersistentFlags().Bool("use_access", false, "Use Cloudflare Access")
+	if err := viper.BindPFlag("use_access", rootCmd.PersistentFlags().Lookup("use_access")); err != nil {
 		errlog.Fatalln(err)
 	}
 }
